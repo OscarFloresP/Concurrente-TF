@@ -19,9 +19,9 @@ Para desarrollar el TF, se tuvo que primero convertir a las computadoras en los 
 - **Interfaz:** Debido a que en las indicaciones del TF brindadas en clase se indicó que la interfaz que se vea desde una página web, se realizó un backend y un frontend simple en go. El backend no tiene una  base de datos, pero la información que recibe es el jugador. Para ello, en el archivo "backend.go" se utiliza el mismo struct de Player que en el archivo principal, node.go, pero se le agrega el atributo id cuyo valor será dado con un contador. Es necesario hacer esta pequeña modificación para que el backend haga una lista de los jugadores que recibe y saber que es un nuevo juegador el que está entrando y evitar confusiones. Una vez recibida la información, realizará las consultas get y post para enviar los datos al frontend y que se vean bien. Para asegurar que el formato, los datos se verán de la forma deseada, también se implementó el archivo llamado "index.go" que se encarga de manejar el frontend. 
 
 **Archivos**
-- **node.go = ** Archivo principal que se encarga de ejecutar el juego de "Hula Hoop Race: Cobras vs Leones"
+- **node.go =** Archivo principal que se encarga de ejecutar el juego de "Hula Hoop Race: Cobras vs Leones"
 - **backend.go =** Archivo que se encarga de gestionar todo lo relacionado con el backend
-- **index.go = **Archivo que se encarga de gestionar todo lo relacionado con el frontend
+- **index.go =** Archivo que se encarga de gestionar todo lo relacionado con el frontend
 
 **Puertos reservados:**
 - **8080 =** Puerto que usa el backend
