@@ -7,14 +7,16 @@ import (
 	"math/rand"
 	"net"
 	"time"
+	"net/http"
+	"bytes"
+	"log"
+	
 )
 
 type Player struct {
-	//Limpiar string `json:"limpiar"`
 	Team string `json:"team"`
 	Home string `json:"home"`
 	From string `json:"from"`
-	Circulo string `json:"circulo"`
 }
 
 type Message struct {
@@ -24,6 +26,7 @@ type Message struct {
 }
 
 type Info struct {
+	team       string
 	hostname   string
 	prev       string
 	next       string
@@ -34,7 +37,6 @@ func listen(hostname string, chInfo chan Info) {
 	if ln, err := net.Listen("tcp", hostname); err == nil {
 		defer ln.Close()
 		fmt.Println("Listening...")
-		fmt.Println("\n  ***\n *   *\n*     *\n *   *\n  ***\n")
 		for {
 			if cn, err := ln.Accept(); err == nil {
 				go handle(cn, chInfo)
@@ -49,10 +51,39 @@ func handle(cn net.Conn, chInfo chan Info) {
 	msg := &Message{}
 	dec := json.NewDecoder(cn)
 	if err := dec.Decode(msg); err == nil {
-		fmt.Println(msg)
+		//fmt.Println(msg)
 		switch msg.Cmd {
 		case "jump":
+			// Crear una solicitud POST al backend con el JSON
+			url := "http://localhost:8080/json" // Reemplaza con la URL de tu backend
+			contestantJSON, err := json.Marshal(msg.Contestant)
+			if err != nil {
+    			log.Fatal(err)
+			}
+			req, err := http.NewRequest("POST", url, bytes.NewBuffer(contestantJSON))
+
+			//req, err := http.NewRequest("POST", url, bytes.NewBuffer(dec.Decode(msg.Contestant)))
+			if err != nil {
+				log.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+		
+			// Realizar la solicitud al backend
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer resp.Body.Close()
+		
+			// Leer la respuesta del backend
+			var response map[string]string
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			if err != nil {
+				log.Fatal(err)
+			}
 			info := <-chInfo
+			fmt.Println(info, msg)
 			enc := json.NewEncoder(cn)
 			if err := enc.Encode(Message{Cmd: "ok"}); err != nil {
 				fmt.Printf("Can't encode OK REPLY\n%s\n", err)
@@ -70,7 +101,7 @@ func handle(cn net.Conn, chInfo chan Info) {
 					func(cn net.Conn) {})
 			}
 			if info.next == "" || info.prev == "" {
-				fmt.Println("Perdimos!")
+				fmt.Printf("Ganaron los del equipo %s\n", player.Team)
 				return
 			}
 			var remote string
@@ -80,21 +111,24 @@ func handle(cn net.Conn, chInfo chan Info) {
 				remote = info.prev
 			}
 			player.From = info.hostname
+			needToFreeInfo := true
 			send(remote, Message{"jump", info.hostname, player}, func(cn2 net.Conn) {
-				duration := time.Second
+				duration := time.Second * 3
 				if err := cn2.SetReadDeadline(time.Now().Add(duration)); err != nil {
 					fmt.Printf("SetReadDeadline failed:\n%s\n", err)
 					panic("OMG!")
 				}
 
 				dec := json.NewDecoder(cn2)
-				var msg2 *Message
-				if dec.Decode(msg2); err == nil {
+				msg2 := &Message{}
+				if err := dec.Decode(msg2); err == nil {
 					fmt.Println("Se supone que recibimos OK")
 				} else {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						if msg.Hostname == info.next {
 							info.challenger = &msg.Contestant
+							fmt.Println("liberando ando info func send jump")
+							needToFreeInfo = false
 							chInfo <- info
 						}
 						fmt.Printf("read timeout:\n%s\n", err)
@@ -103,21 +137,23 @@ func handle(cn net.Conn, chInfo chan Info) {
 					}
 				}
 			})
+			fmt.Println("liberando ando info end of jump")
+			if needToFreeInfo {
+				chInfo <- info
+			}
 		case "send new":
 			info := <-chInfo
 			var remote string
 			player := Player{Home: info.hostname, From: info.hostname}
-			//player.Limpiar = "ESC[2J"
-			fmt.Printf("\033[2J")
 			if info.prev == "" {
-				player.Circulo="\n  ***\n *   *\n*  C  *\n *   *\n  ***\n"
 				remote = info.next
 				player.Team = "Cobras"
 			} else {
 				remote = info.prev
 				player.Team = "Leones"
-				player.Circulo="\n  ***\n *   *\n*  L  *\n *   *\n  ***\n"
 			}
+			fmt.Printf("Sending new player from %s\n", info.team)
+			needToFreeInfo := true
 			send(remote, Message{"jump", info.hostname, player}, func(cn2 net.Conn) {
 				duration := time.Second
 				if err := cn2.SetReadDeadline(time.Now().Add(duration)); err != nil {
@@ -126,13 +162,15 @@ func handle(cn net.Conn, chInfo chan Info) {
 				}
 
 				dec := json.NewDecoder(cn2)
-				var msg2 *Message
-				if dec.Decode(msg2); err == nil {
+				msg2 := &Message{}
+				if err := dec.Decode(msg2); err == nil {
 					fmt.Println("Se supone que recibimos OK")
 				} else {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						if msg.Hostname == info.next {
 							info.challenger = &msg.Contestant
+							fmt.Println("liberando ando info func send send new")
+							needToFreeInfo = false
 							chInfo <- info
 						}
 						fmt.Printf("read timeout:\n%s\n", err)
@@ -141,7 +179,10 @@ func handle(cn net.Conn, chInfo chan Info) {
 					}
 				}
 			})
-			chInfo <- info
+			fmt.Println("liberando ando info end of send new")
+			if needToFreeInfo {
+				chInfo <- info
+			}
 		}
 	} else {
 		fmt.Printf("Couldn't decode: %s\n", err)
@@ -152,9 +193,10 @@ func send(remote string, msg Message, f func(cn net.Conn)) {
 	if cn, err := net.Dial("tcp", remote); err == nil {
 		defer cn.Close()
 		enc := json.NewEncoder(cn)
-		if err := enc.Encode(msg); err != nil {
-			fmt.Printf("Couldn't enconde %s\n", err)
+		if err := enc.Encode(msg); err == nil {
 			f(cn)
+		} else {
+			fmt.Printf("Couldn't enconde %s\n", err)
 		}
 	} else {
 		fmt.Printf("Failed to send: %s\n", err)
@@ -180,7 +222,14 @@ func main() {
 		return
 	}
 
-	chRemotes := make(chan Info, 1)
-	chRemotes <- Info{*hostname, *prevRemote, *nextRemote, nil}
-	listen(*hostname, chRemotes)
+	var team string
+	if *prevRemote == "" {
+		team = "Team 1: Cobras"
+	} else {
+		team = "Team 2: Leones"
+	}
+
+	chInfo := make(chan Info, 1)
+	chInfo <- Info{team, *hostname, *prevRemote, *nextRemote, nil}
+	listen(*hostname, chInfo)
 }
